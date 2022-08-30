@@ -6,6 +6,7 @@
 #include <cassert>
 #include <forward_list>
 #include <iostream>
+#include <string>
 
 #include "tuple.h"
 
@@ -75,11 +76,17 @@ class Transaction
 class DataTable
 {
   public:
+    DataTable(std::string name) : table_name_(name) {}
+
+    uint64_t Select(Transaction *txn, const uint64_t key, std::vector<Tuple> &outbuf);
     bool Insert(Transaction *txn, uint64_t key, Tuple tuple);
+    void Update(Transaction *txn, const uint64_t key, char *outbuf);
+
     uint32_t Size() const { return table_.size(); }
     std::vector<Tuple > table_;
     // bitmap ?
     // std::deque<Tuple> table_;
+    std::string table_name_;
 
     TimestampManager *ts_manager_;
 };
@@ -87,46 +94,50 @@ class DataTable
 
 // Imple DataTable
 
-//   void Select(Transaction *txn, const uint64_t key, std::vector<Tuple> &outbuf)
-//     {
-//         // ts_manager_->IncreaseTimestamp();
-//         // outbuf.clear();
-//         // // read only transaction part
-//         // // find the curr pos
-//         // for (int i = 0; i < Size(); i ++ )
-//         // {
-//         //     if (key == table_[i].key_)
-//         //     {
-//         //         // Tuple *curr_tuple = &(table_[i]);
-//         //         // while (curr_tuple)
-//         //         // {
-//         //         //     if (curr_tuple->begin_timestamp_.load() <= txn->start_time_ && 
-//         //         //     curr_tuple->end_timestamp_.load() > txn->start_time_)
-//         //         //     {
-//         //         //         outbuf.push_back(*curr_tuple);
-//         //         //     }
-//         //         // }
-//         //     }
-//         // }
-//         // // which version in my vision, select the latest
-//         // // push to the out buffer
+uint64_t DataTable::Select(Transaction *txn, const uint64_t key, std::vector<Tuple> &outbuf)
+{
+    outbuf.clear();
+    // read only transaction part
+    // find the curr pos
+    for (int i = 0; i < Size(); i ++ )
+    {
+        if (key == table_[i].key_)
+        {
+            // if (version)
+            outbuf.push_back(table_[i]);
+        }
+    }
+    return outbuf.size();
+    // which version in my vision, select the latest
+    // push to the out buffer
 
-//         // // push into read set ? 
-//     }
-    
+    // push into read set ? 
+}
+
 bool DataTable::Insert(Transaction *txn, uint64_t key, Tuple tuple)
 {
-
-    bool find = 0;
-    for (int i = 0; i < Size(); i ++ ) if (key == table_[i].key_) find = 1;
-    if (find == 0)
+    int64_t find = -1;
+    // for (int i = 0; i < Size(); i ++ ) if (key == table_[i].key_) find = i;
+    if (find == -1)
     {
         table_.push_back(tuple);
     }
     else
     {
         // check the timestamp of version, add new in locol.
+        // version chain add
         assert(0);
+        int64_t i = find;
+        // find the place
+
+        //insert to local
+        
+        Tuple *tmp = table_[i].next_;
+        Tuple *second = new Tuple();
+        *second = table_[i];
+        table_[i] = tuple;
+        table_[i].next_ = second;
+        second->next_ = tmp;
     }
 
     return 1;
@@ -145,15 +156,23 @@ bool DataTable::Insert(Transaction *txn, uint64_t key, Tuple tuple)
 }
 
 
-//     void Update(Transaction *txn, const uint64_t key, char *outbuf)
-//     {
-//         // write set
+void DataTable::Update(Transaction *txn, const uint64_t key, char *outbuf)
+{
+    // write set
+    
+    int64_t find = -1;
+    for (int i = 0; i < Size(); i ++ ) if (key == table_[i].key_) find = i;
+    if (find == -1) assert(0);
 
-//         // select
-//         // insert new tuple with new ts, add to the version chain
-//         // push into write set
+    Tuple *new_tuple = new Tuple();
+    // tuple.txn_id_t = txn->id;
+    // ts
+    new_tuple->next_ = &(table_[find]);
 
-//     }
+    //add pointer to write set
+
+}
+
 //     // void Delete(Transaction *txn, const Key key, char *outbuf)
 //     // {
 //     //     // mark as null

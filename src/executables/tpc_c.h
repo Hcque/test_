@@ -1,5 +1,8 @@
 
-// TPC-C table layout
+#include <unordered_map>
+
+
+namespace MVTO {
 
 struct Warehouse
 {
@@ -8,49 +11,28 @@ struct Warehouse
     double w_ytd;
 };
 
-
 struct Stock
 {
     uint16_t s_w_id;
     uint32_t s_i_id;
-    int16_t s_quantuty;
-    uint32_t s_ytd;
-    uint16_t s_order_count;
-    uint16_t s_remote_count;
+    int16_t s_quantity;
+    uint32_t ytd;
 };
 
 struct District
 {
-    uint16_t d_w_id;
-    uint8_t d_id;
-    uint32_t d_next_o_id;
-    double d_tax;
+    uint8_t d_id; // 1
+    uint32_t next_o_id; // 4
+    double d_tax; //sizeof(double)
     double d_ytd;
-};
-
-
-struct Customer
-{
-    uint16_t c_w_id;
-    uint8_t c_d_id;
-    uint32_t c_id;
-    uint16_t c_payment_cnt;
-    uint16_t c_delivery_cnt;
-};
-
-struct History
-{
-
 };
 
 struct NewOrder
 {
-    uint16_t no_w_id;
-    uint8_t no_d_id;
-    uint32_t no_o_id;
-
+    uint16_t no_w_id; //2
+    uint8_t no_d_id; //1
+    uint32_t no_o_id; // 4
 };
-
 
 struct OrderLine
 {
@@ -59,64 +41,71 @@ struct OrderLine
     uint32_t ol_o_id;
     uint8_t ol_number;
     uint32_t ol_i_id;
-    uint16_tol_supply_w_id;
+    uint16_t ol_supply_w_id;
     uint8_t ol_quantity;
     double ol_amount;
 };
 
 
-// new order txn
-//
-class NewOrderTransaction
+class DataBase
 {
   public:
-    NewOrderTransaction()
+
+    void CreateTable()
     {
-        generate();
+        DataTable *table = new DataTable("District");
+        tables_["District"] = table;
     }
-    void generate()
+    void GenerateInitData(int NUM)
     {
+        size_t double_sz = sizeof(double);
+        size_t value_sz = 1+4+double_sz + double_sz;
+        for (int i = 0; i < NUM; i ++ )
+        {
+            // District *d = new District();
+            if (i % 100000 == 0 )
+                std::cout << i << "\n";
+            
+            Tuple *tuple = new Tuple(i, value_sz);
+            District *d = reinterpret_cast<District *>( tuple->value_ );
+            d->d_id = i;
+            d->next_o_id += 1;
+            d->d_tax = 0.1;
+            d->d_ytd = 0.2;
+            tables_["District"]->Insert(nullptr, i, *tuple);
+        }
 
-    }
+        std::vector<Tuple> out;
+        std::cout << tables_["District"]->Select(nullptr, 86, out) << std::endl;
 
-    void run()
-    {
-        // input is : wid, d_id, c_id, 
-
-        // update district next_o_i + 1
-
-        // insert into ORDERS : (o_id, d_id, w_id, c_id, datetime, o_ol_cnt, O_all_local
-
-        // insert into NewOrder (O_id, d_id, w_id )
-        // ol_supply_id,
-        // ol_i_id,
-        // ol_quantity
-
-        // update Stock : s_quantity
-        // ol_amount = ol_quantity * i_price * (1 + w_tax + d_tax ) * (1 - c_discount );
-
-        // insert into OrderLine (ol_o_id, ol_d_id, ol_w_id,ol_number, 
-                                //  ol_i_id, ol_supply_w_id, 
-                                //  ol_quantity, ol_amount, ol_dist_info
-                                //  );
-        // commit
-
-
+        std::cout << reinterpret_cast<District *>( out[0].value_)->d_tax << std::endl;
 
 
     }
 
+    void RunNewOrder()
+    {
+        // update district next_oid
+        // tables_["District"].update()
+
+        //oid = next_o_id
+        // insert into Orders
+
+        // insert into NewOrder
+
+        //  
 
 
+        // update Stock s_quantity
+
+        // ol_amount, total
+
+        // insert into orderlines
+
+    }
+
+    std::unordered_map<std::string, DataTable *> tables_;
 };
 
 
-// payment txn
-
-////////
-
-
-
-
-
-
+} // namepsace MVTO
