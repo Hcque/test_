@@ -1,6 +1,8 @@
 
 // lock contention , basic mode
 
+// swap old with old is not correct
+
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -10,8 +12,8 @@
 
 struct Node
 {
-    // Node() {}
-    // Node(int v) : value(v), next(nullptr) {}
+    Node() {}
+    Node(int v) : value(v), next(nullptr) {}
     int value;
     std::atomic<Node *> next;
     // Node* next;
@@ -25,17 +27,15 @@ struct List
     // std::mutex mutex_;
 };
 
-// void insert(int value)
 void insert(List* list, int value)
 {
-    // std::cout << value << std::endl;
-    //  list->mutex_.lock();
     Node* n = new Node;
     n->value = value;
 
     while (1)
     {
 
+    Node* old = list->head.load()->next.load();
     Node* prev = list->head.load();
     // prev->lk.lock();
     // auto cur = prev->next;
@@ -52,9 +52,10 @@ void insert(List* list, int value)
         // cur = cur->next;
     // }
 
-    n->next.store(prev);
-    // prev->next = n;
-    if  ( list->head.compare_exchange_strong(prev, n ) ) return ;
+    n->next.store(prev->next.load());
+    // prev->next.store(n);
+    if  ( list->head.load()->next.compare_exchange_strong(old, n ) ) return ;
+    // prev->next
     }
 
 
@@ -65,29 +66,12 @@ void insert(List* list, int value)
 
 
 
-// std::thread each(insert, &l, )
-
-void delete_(List *list, int value)
-{
-
-}
-
 std::vector<std::thread> ths;
-
-
-struct Version
-{
-    int val;
-    std::atomic<Version *> next_;
-
-    Version *InitRecord();
-
-};
 
 int main(int argc, char *argv[])
 {
     List *l = new List();
-    // l->head.store(new Node(-1));
+    l->head.store(new Node(-1));
     // l->head->value = -1;
 
     // std::this_thread::sleep_for( std::chrono::seconds(2) );
@@ -107,10 +91,7 @@ int main(int argc, char *argv[])
     int cnt = 0;
     while (cur)
     {
-        // std::cout << cur->value << std::endl;
-        // cval = cur->value;
-        // assert(cval -1 == prev);
-        // prev = cval;
+        // std::cout << cur << std::endl;
         cnt ++ ;
 
         cur = cur->next.load();

@@ -114,8 +114,6 @@ class UndoBuffer
 };
 
 
-
-
 int main()
 {
     UndoBuffer *b = new UndoBuffer();
