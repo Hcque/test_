@@ -2,7 +2,7 @@
 
 #include <map>
 
-#include "indexes/masstree_wrapper.hpp"
+#include "masstree_wrapper.hpp"
 #include "protocols/common/schema.hpp"
 #include "utils/logger.hpp"
 #include "utils/utils.hpp"

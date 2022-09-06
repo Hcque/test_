@@ -4,13 +4,16 @@
 #include <set>
 #include <map>
 #include <cassert>
+#include <algorithm>
 
 #include "readwrite_lock.h"
 #include "atomic_wrapper.h"
+#include "./../protocols/common/schema.hpp"
 
 using Rec = void;
 using TxnID = uint64_t;
 using TableID = uint64_t;
+
 
 
 struct Version
@@ -112,7 +115,7 @@ class MVTO
 
             val->lock();
             // detacted from te tree
-            if (val->is_detacted_from_tree())
+            if (val->is_detached_from_tree())
             {
                 val->unlock();
                 return nullptr;
@@ -132,6 +135,9 @@ class MVTO
             }
 
             version->update_read_ts(start_ts);
+            val->unlock();
+
+            if (version->deleted) return nullptr; // ?
 
             // into read write set
             rw_table.emplace_hint(rw_it, std::piecewise_construct, 
@@ -153,8 +159,9 @@ class MVTO
     Rec *insert(TableID table_id, Key key) 
     {
         Index& idx = Index::get_index();
-
         // also need record size
+        Schema& sch = Schema::get_schema();
+        size_t record_size = sch.get_record_size(table_id);
 
         tables_.insert(table_id);
         auto &rw_table = rws.get_table(table_id);
@@ -168,8 +175,13 @@ class MVTO
             if (res == Index::Result::OK) {
 
                 val->lock();
-                    if (val->isemplty())
-                    {
+                if (val->is_detached_from_tree())
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+                if (val->is_emplty())
+                {
                     val->unlock();
                     return nullptr;
                 }
@@ -185,26 +197,54 @@ class MVTO
                 }
                 version->update_read_ts(start_ts);
                 val->unlock();
+                if ( ! (head_version == version && version->deleted ))
+                    return nullptr;
+                Rec *rec = malloc(record_size);
 
-                // ??
-                // if (version->deleted) return nullptr;
-
-                // aloocate new rec space
-                // into write set
-                // w_table.emplace_hint();
-                // return version->rec;
+                auto new_iter = rw_table.emplace_hint(
+                    rw_it, std::piecewise_construct,
+                    std::forward_as_tuple(key),
+                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, false, val)
+                );
+                auto &w_table = ws.get_table(table_id);
+                w_table.emplace_back(key, new_iter);
+                return rec;
             }
 
-
             // create new val to the write set
+            Value *new_val = reinterpret_cast<Value *>(malloc(sizeof(Value)));
+            new_val->initialize();
+            Version *version = reinterpret_cast<Version *>(malloc(sizeof(Version)));
+            Rec *rec = malloc(sizeof(record_size));
+            new_val->version = version;
+            version->read_ts = start_ts;
+            version->write_ts = start_ts;
+            version->prev = nullptr;
+            version->rec = rec;
+            version->deleted = false;
 
+            auto new_iter = rw_table.emplace_hint(
+                rw_it, std::piecewise_construct,
+                std::forward_as_tuple(key),
+                std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, val)
+            );
+            auto &w_table = ws.get_table(table_id);
+            w_table.emplace_back(key, new_iter);
+            return rec;
         }
 
         // if could find
         auto rw_type = rw_it->second.type_;
-        if (rw_type ==  ReadWriteType::READ) return rw_it->second.read_rec;
-        else if (rw_type == ReadWriteType::UPDATE || rw_type == ReadWriteType::INSERT) return rw_it->second.write_rec;
-        else if (rw_type == ReadWriteType::DELETE) return nullptr;
+        if (rw_type ==  ReadWriteType::READ ||
+        rw_type == ReadWriteType::UPDATE || rw_type == ReadWriteType::INSERT) 
+        {
+            return nullptr;
+        }
+        else if (rw_type == ReadWriteType::DELETE) 
+        {
+            rw_it->second.type = ReadWriteType::UPDATE;
+            return rw_it->second.write_rec;
+        }
         else assert(0);
 
     }
@@ -212,8 +252,9 @@ class MVTO
     Rec *update(TableID table_id, Key key)
     {
         Index& idx = Index::get_index();
-
         // also need record size
+        Schema& sch = Schema::get_schema();
+        size_t record_size = sch.get_record_size(table_id);
 
         tables_.insert(table_id);
         auto &rw_table = rws.get_table(table_id);
@@ -223,17 +264,21 @@ class MVTO
         {
             Value *val;
             typename Index::Result res = idx.find(table_id, key, val);
-            // if () i// abort if not find
-
+            if (res == Index::Result::NOT_FOUND) return nullptr;
 
             val->lock();
-                if (val->isemplty())
-                {
+            if (val->is_detached_from_tree())
+            {
+                val->unlock();
+                return nullptr;
+            }
+            if (val->is_emplty())
+            {
+                delete_from_tree(table_id, key, val);
                 val->unlock();
                 return nullptr;
             }
 
-            Version *head_version = val->version;
             Version *version = get_correct_version(val);
             // gc
             gc_version_chain(val);
@@ -245,38 +290,301 @@ class MVTO
             version->update_read_ts(start_ts);
             val->unlock();
 
-            // ??
-            // if (version->deleted) return nullptr;
+            Rec *rec = malloc(record_size);
 
-            // aloocate new rec space
-            // into write set
-            // w_table.emplace_hint();
-            // return version->rec;
-
-
-            // create new val to the write set
-
+            auto new_iter = rw_table.emplace_hint(
+                rw_it, std::piecewise_construct,
+                std::forward_as_tuple(key),
+                std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, false, val)
+            );
+            auto &w_table = ws.get_table(table_id);
+            w_table.emplace_back(key, new_iter);
+            return rec;
         }
 
         // if could find
         auto rw_type = rw_it->second.type_;
-        if (rw_type == ReadWriteType::READ) return rw_it->second.read_rec;
+        if (rw_type == ReadWriteType::READ)
+        {
+            Rec *rec = malloc(record_size);
+            memcpy(rec, rw_it->second.read_rec, record_size);
+            rw_it.second.write_rec = rec;
+            rw_it.second.type_ = ReadWriteType::UPDATE;
+
+            auto &w_table = ws.get_table(table_id);
+            w_table.emplace_back(key, rw_it);
+            return rec;
+        } 
         else if (rw_type == ReadWriteType::UPDATE || rw_type == ReadWriteType::INSERT) return rw_it->second.write_rec;
         else if (rw_type == ReadWriteType::DELETE) return nullptr;
         else assert(0);
     }
-    Rec *upsert(TableID table_id, Key key);
-    const Rec *remove(TableID table_id, Key key);
+
+
+    Rec *upsert(TableID table_id, Key key)
+    {
+        Index& idx = Index::get_index();
+        // also need record size
+        Schema& sch = Schema::get_schema();
+        size_t record_size = sch.get_record_size(table_id);
+
+        tables_.insert(table_id);
+        auto &rw_table = rws.get_table(table_id);
+        auto rw_it = rw_table.find(key);
+
+        if (rw_it == rw_table.end())
+        {
+            Value *val;
+            typename Index::Result res = idx.find(table_id, key, val);
+            if (res == Index::Result::NOT_FOUND)
+            {
+                // create new val to the write set
+                Value *new_val = reinterpret_cast<Value *>(malloc(sizeof(Value)));
+                new_val->initialize();
+                Version *version = reinterpret_cast<Version *>(malloc(sizeof(Version)));
+                Rec *rec = malloc(sizeof(record_size));
+                new_val->version = version;
+                version->read_ts = start_ts;
+                version->write_ts = start_ts;
+                version->prev = nullptr;
+                version->rec = rec;
+                version->deleted = false;
+
+                auto new_iter = rw_table.emplace_hint(
+                    rw_it, std::piecewise_construct,
+                    std::forward_as_tuple(key),
+                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, val)
+                );
+                auto &w_table = ws.get_table(table_id);
+                w_table.emplace_back(key, new_iter);
+                return rec;
+            } 
+            else if (res == Index::Result::OK)
+            {
+                val->lock();
+                if (val->is_detached_from_tree())
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+                if (val->is_emplty())
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+
+                Version *head_version = val->version;
+                Version *version = get_correct_version(val);
+                // gc
+                gc_version_chain(val);
+                if (version == nullptr )
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+                version->update_read_ts(start_ts);
+                val->unlock();
+                if ( (head_version == version) && version->deleted )
+                {
+                    // insert
+
+                }
+                else if ( !version->deleted )
+                {
+                    // update
+
+                }
+                else return nullptr;
+
+                Rec *rec = malloc(record_size);
+
+                auto new_iter = rw_table.emplace_hint(
+                    rw_it, std::piecewise_construct,
+                    std::forward_as_tuple(key),
+                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, false, val)
+                );
+                auto &w_table = ws.get_table(table_id);
+                w_table.emplace_back(key, new_iter);
+                return rec;
+
+            }
+            else assert(0);
+        }
+
+        // if could find
+        auto rw_type = rw_it->second.type_;
+        if (rw_type == ReadWriteType::READ)
+        {
+            Rec *rec = malloc(record_size);
+            memcpy(rec, rw_it->second.read_rec, record_size);
+            rw_it.second.write_rec = rec;
+            rw_it.second.type_ = ReadWriteType::UPDATE;
+
+            auto &w_table = ws.get_table(table_id);
+            w_table.emplace_back(key, rw_it);
+            return rec;
+        } 
+        else if (rw_type == ReadWriteType::UPDATE || rw_type == ReadWriteType::INSERT)
+        {
+            return rw_it->second.write_rec;
+        } 
+        else if (rw_type == ReadWriteType::DELETE) 
+        {
+            rw_it.second.type_ = ReadWriteType::UPDATE;
+            return rw_it->second.write_rec;
+        }
+        else assert(0);
+
+    }
+
+
+    const Rec *remove(TableID table_id, Key key)
+    {
+        Index& idx = Index::get_index();
+        // also need record size
+        Schema& sch = Schema::get_schema();
+        size_t record_size = sch.get_record_size(table_id);
+
+        tables_.insert(table_id);
+        auto &rw_table = rws.get_table(table_id);
+        auto rw_it = rw_table.find(key);
+
+        if (rw_it == rw_table.end())
+        {
+            Value *val;
+            typename Index::Result res = idx.find(table_id, key, val);
+
+            if (res == Index::Result::OK) {
+
+                val->lock();
+                if (val->is_detached_from_tree())
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+                if (val->is_emplty())
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+
+                Version *head_version = val->version;
+                Version *version = get_correct_version(val);
+                // gc
+                gc_version_chain(val);
+                if (version == nullptr )
+                {
+                    val->unlock();
+                    return nullptr;
+                }
+                version->update_read_ts(start_ts);
+                val->unlock();
+                if ( ! (head_version == version && version->deleted ))
+                    return nullptr;
+                Rec *rec = malloc(record_size);
+
+                auto new_iter = rw_table.emplace_hint(
+                    rw_it, std::piecewise_construct,
+                    std::forward_as_tuple(key),
+                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, false, val)
+                );
+                auto &w_table = ws.get_table(table_id);
+                w_table.emplace_back(key, new_iter);
+                return rec;
+            }
+
+        }
+
+        // if could find ( in the remove func)
+        auto rw_type = rw_it->second.type_;
+        if (rw_type ==  ReadWriteType::READ)
+        {
+            rw_it->second.type = ReadWriteType::DELETE;
+            auto &w_table = ws.get_table(table_id);
+            // w_table.emplace_back(key, new_iter);
+            return rw_it->second.read_rec;
+        }
+        else if (rw_type == ReadWriteType::UPDATE || rw_type == ReadWriteType::INSERT) 
+        {
+            return nullptr;
+        }
+        else if (rw_type == ReadWriteType::DELETE) 
+        {
+            rw_it->second.type = ReadWriteType::UPDATE;
+            return rw_it->second.write_rec;
+        }
+        else assert(0);
+
+
+    }
 
     bool read_scan(TableID table_id, Key lkey, Key rkey, uint64_t count, bool rev, std::map<Key, Rec*> &kr_map)
     {
 
     }
 
-    bool precommit();
-    void abort();
+    bool precommit()
+    {
+        Index &idx = Index::get_index();
+        for (TableID table_id : tables_)
+        {
+            auto &w_table = ws.get_table(table_id);
+            std::sort(w_table.begin(), w_table.end(), [](const auto& lhs, const auto& rhs)
+            {
+               return lhs.first <= rhs.first;
+            });
+            for (auto w_iter = w_table.begin(); w_iter != w_table.end(); ++ w_iter)
+            {
+                auto rw_iter = w_iter->second;
+                Value *val = rw_iter->second.val;
+                val->lock();
+                if (val->is_detached_from_tree() )
+                {
+
+                }
+                auto rw_type = rw_iter->second.type_;
+                bool is_new = rw_iter->second.is_new;
+
+                // insert
+
+
+
+            }
+
+
+        }
+
+    }
+
+    void abort()
+    {
+        for (TableID table_id : tables_)
+        {
+            auto &rw_table = rws.get_table(table_id);
+            auto &w_table = ws.get_table(table_id);
+            for (auto w_iter = w_table.begin(); w_iter != w_table.end(); ++ w_iter)
+            {
+                auto rw_iter = w_iter->second;
+                auto rw_type = rw_iter->second.type_;
+                bool is_new = rw_iter->second.type_;
+                if (rw_type == ReadWriteType::INSERT && is_new)
+                {
+                    // deallocate val;
+                }
+                else
+                {
+                    delete rw_iter->second.write_rec;
+                }
+
+            }
+            rw_table.clear();
+            w_table().clear();
+        }
+        tables_.clear();
+    }
 
     // need acquire value lock before calling
+    // 
     void delete_from_tree(TableID table_id, Key key, Value *val)
     {
         Index &idx = Index::get_index();

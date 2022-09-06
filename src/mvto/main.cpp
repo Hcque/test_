@@ -2,11 +2,19 @@
 #include <thread>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 
 #include "transaction.h"
+#include "initializer.h"
+#include "tpcc.h"
+
+
+// #include "./../indexes/masstree.hpp"
+#include "./../indexes/hash_index.h"
 
 void runtxn()
 {
+    std::cout << "me " << std::endl;
 
 }
 
@@ -16,8 +24,12 @@ int main(int argc, char *argv[])
     int w_cnt = atoi(argv[1]);
     int thre_cnt = atoi(argv[2]);
     // init db
-    // std::cout << "load tables\n";
-    // load_all_tables(w_cnt);
+    std::cout << "load tables\n";
+
+    using Index = HashIndexes<Value<Version>>;
+    using Protocol = MVTO<Index>;
+    Initializer<Index>::load_all_tables(w_cnt);
+    // Index::get_index();
 
     // std::cout << "check table\n";
     // typename RecordToTable<WareHouse>::type& t = Database::get_db().get_table<WareHouse>();
@@ -41,6 +53,4 @@ int main(int argc, char *argv[])
     }
 
     return 0;
-
-
 }

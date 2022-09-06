@@ -1,0 +1,56 @@
+
+cmake_minimum_required(VERSION 3.16)
+
+project(
+    MyNoise
+)
+
+file(GLOB_RECURSE
+        NOISEPAGE_SRCS       
+        ${PROJECT_SOURCE_DIR}/src/*.cpp
+        ${PROJECT_SOURCE_DIR}/src/include/*.h
+        )
+
+message("fecthcontent ")
+# include(FetchContent)                   # FetchContent_ functions.
+message("fecthcontent ")
+
+# GoogleTest requires at least C++14
+set(CMAKE_CXX_STANDARD 14)
+
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG release-1.12.1
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(
+  hello_test
+  test/mvcc_test.cpp
+  test/adobe_test.cpp
+)
+target_link_libraries(
+  hello_test
+  GTest::gtest_main
+)
+
+include(GoogleTest)
+gtest_discover_tests(hello_test)
+
+
+
+add_library(noisepage_lib OBJECT ${NOISEPAGE_SRCS})
+
+target_compile_options(noisepage_lib PUBLIC 
+    "-march=native"
+)
+
+
+
+

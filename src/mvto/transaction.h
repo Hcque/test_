@@ -1,3 +1,6 @@
+#pragma once
+
+#include <memory>
 
 #include "mvto.h"
 
@@ -48,7 +51,7 @@ class Transaction
     }
 
     template <typename Record>
-    Result prepare_record_for_insert(Record* &rec_ptr)
+    Result prepare_record_for_insert(Record* &rec_ptr, typename Record::Key key)
     {
         rec_ptr = reinterpret_cast<const Record *> ( 
             protocol->insert(get_id<Record>(), key.get_raw_key()) );
