@@ -6,6 +6,10 @@
 //////////// record
 struct DistrictKey;
 struct WareHouseKey;
+struct CustomerKey;
+struct OrderKey;
+struct NewOrderKey;
+struct OrderLineKey;
 
 struct District
 {
@@ -43,4 +47,64 @@ struct WareHouse
     }
 
 };
+
+
+struct Customer
+{
+    using Key = CustomerKey;
+    uint16_t c_w_id;
+    uint8_t c_d_id;
+    uint32_t c_id;
+    uint16_t c_payment_cnt;
+    uint16_t c_delivery_cnt;
+
+    double c_credit_limit;
+    double c_discount;
+    double c_balance;
+    double c_ytd_payment;
+
+    void generate();
+
+};
+
+struct Order
+{
+    using Key = OrderKey;
+    uint16_t o_w_id;
+    uint8_t o_d_id;
+    uint32_t o_id;
+
+    uint32_t o_c_id;
+    void generate();
+    
+};
+
+struct NewOrder
+{
+    using Key = NewOrderKey;
+    uint16_t no_w_id;
+    uint8_t no_d_id;
+    uint32_t no_o_id;
+
+};
+
+struct OrderLine
+{
+    using Key = OrderLineKey;
+    uint8_t ol_number;
+    uint16_t ol_w_id;
+    uint8_t ol_d_id;
+    uint32_t ol_o_id;
+    //TODO
+
+};
+
+
+
+
+
+
+
+
+
 

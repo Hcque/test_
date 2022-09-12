@@ -5,6 +5,7 @@
 #include <map>
 #include <cassert>
 #include <algorithm>
+#include <cstring>
 
 #include "readwrite_lock.h"
 #include "atomic_wrapper.h"
@@ -13,7 +14,6 @@
 using Rec = void;
 using TxnID = uint64_t;
 using TableID = uint64_t;
-
 
 
 struct Version
@@ -48,7 +48,7 @@ struct Value
 
     void lock() { rwl.lock(); }
     void unlock() { rwl.unlock(); }
-    bool is_empty() { return (version.prev == nullptr) && version.deleted; }
+    bool is_empty() { return (version->prev == nullptr) && version->deleted; }
     bool is_detached_from_tree() { return version == nullptr; }
 
 };
@@ -56,8 +56,23 @@ struct Value
 enum class ReadWriteType { READ = 0, INSERT, UPDATE, DELETE };
 
 template <typename Value>
-class ReadWriteElement
+struct ReadWriteElement
 {
+    using Version = typename Value::Version;
+    ReadWriteElement(void *rd_rec, void *wt_rec, ReadWriteType type, 
+    bool is_new, Value *val)
+    : read_rec(rd_rec)
+    , write_rec(wt_rec)
+    , type_(type)
+    , is_new(is_new)
+    , val(val) {}
+
+    void *read_rec;
+    void *write_rec;
+
+    ReadWriteType type_ = ReadWriteType::READ;
+    bool is_new;
+    Value *val;
 
 };
 
@@ -88,18 +103,30 @@ class MVTO
 {
     using Key = typename Index::Key;
     using Value = typename Index::Value;
-    using Version = typename Index::Version;
-    using LeafNode = typename Index::LeafNode;
-    using NodeInfo = typename Index::NodeInfo;
+    using Version = typename Value::Version;
+    // using LeafNode = typename Index::LeafNode;
+    // using NodeInfo = typename Index::NodeInfo;
 
   private:
     TxnID txn_id;
-    uint64_t start_ts, smallest_ts;
+    uint64_t start_ts, smallest_ts, largest_ts;
     std::set<TableID> tables_;
     ReadWriteSet<Key, Value> rws;
     WriteSet<Key, Value> ws;
 
   public:
+
+
+    MVTO(TxnID txn_id, uint64_t start_ts) 
+        : txn_id(txn_id)
+        , start_ts(start_ts) {}
+
+    MVTO(TxnID txn_id, uint64_t start_ts, uint64_t smallest_ts, uint64_t largest_ts) 
+        : txn_id(txn_id)
+        , start_ts(start_ts)
+        , smallest_ts(smallest_ts)
+        , largest_ts(largest_ts) {}
+
     Rec *read(TableID table_id, Key key) 
     {
         Index& idx = Index::get_index();
@@ -107,46 +134,62 @@ class MVTO
         auto &rw_table = rws.get_table(table_id);
         auto rw_it = rw_table.find(key);
 
+        std::cout << "[mvto read] " << "after find " << std::endl;
+
         if (rw_it == rw_table.end())
         {
+            std::cout << "[mvto read] " << "go to end " << std::endl;
             Value *val;
             typename Index::Result res = idx.find(table_id, key, val);
             if (res == Index::Result::NOT_FOUND) return nullptr;
 
             val->lock();
-            // detacted from te tree
+            // detacted from the tree
             if (val->is_detached_from_tree())
             {
-                val->unlock();
-                return nullptr;
-            }
+                std::cout << "[mvto read] " << "detached from the tree" << std::endl;
 
-            if (val->is_emplty())
-            {
                 val->unlock();
                 return nullptr;
             }
+            // std::cout << "[mvto read] " << "go to end " << std::endl;
+
+            if (val->is_empty())
+            {
+                std::cout << "[mvto read] " << " is empty " << std::endl;
+                val->unlock();
+                return nullptr;
+            }
+            // std::cout << "[mvto read] " << "go to end " << std::endl;
 
             Version *version = get_correct_version(val);
             if (version == nullptr)
             {
+                std::cout << "[mvto read] " << "find nullptr" << std::endl;
                 val->unlock();
                 return nullptr;
             }
+
+            // std::cout << "[mvto read] " << "go to end " << std::endl;
 
             version->update_read_ts(start_ts);
             val->unlock();
 
             if (version->deleted) return nullptr; // ?
 
+            // std::cout << "[mvto read] " << "go to end " << std::endl;
+
             // into read write set
             rw_table.emplace_hint(rw_it, std::piecewise_construct, 
                 std::forward_as_tuple(key), 
                 std::forward_as_tuple(version->rec, nullptr, ReadWriteType::READ, false, val)
             );
+
+            // std::cout << "[mvto read] " << "go to end " << std::endl;
             return version->rec;
         }
 
+        std::cout << "[mvto read] " << "type" << std::endl;
         // if could find
         auto rw_type = rw_it->second.type_;
         if (rw_type == ReadWriteType::READ) return rw_it->second.read_rec;
@@ -160,7 +203,7 @@ class MVTO
     {
         Index& idx = Index::get_index();
         // also need record size
-        Schema& sch = Schema::get_schema();
+        const Schema& sch = Schema::get_schema();
         size_t record_size = sch.get_record_size(table_id);
 
         tables_.insert(table_id);
@@ -180,7 +223,7 @@ class MVTO
                     val->unlock();
                     return nullptr;
                 }
-                if (val->is_emplty())
+                if (val->is_empty())
                 {
                     val->unlock();
                     return nullptr;
@@ -226,7 +269,7 @@ class MVTO
             auto new_iter = rw_table.emplace_hint(
                 rw_it, std::piecewise_construct,
                 std::forward_as_tuple(key),
-                std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, val)
+                std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, new_val)
             );
             auto &w_table = ws.get_table(table_id);
             w_table.emplace_back(key, new_iter);
@@ -242,7 +285,7 @@ class MVTO
         }
         else if (rw_type == ReadWriteType::DELETE) 
         {
-            rw_it->second.type = ReadWriteType::UPDATE;
+            rw_it->second.type_ = ReadWriteType::UPDATE;
             return rw_it->second.write_rec;
         }
         else assert(0);
@@ -251,14 +294,18 @@ class MVTO
 
     Rec *update(TableID table_id, Key key)
     {
+        std::cout << "[mvto update] start" << std::endl;
         Index& idx = Index::get_index();
         // also need record size
-        Schema& sch = Schema::get_schema();
+        const Schema& sch = Schema::get_schema();
+        std::cout << "[mvto update] after get schema" << table_id << std::endl;
         size_t record_size = sch.get_record_size(table_id);
 
+        std::cout << "[mvto update] after find" << std::endl;
         tables_.insert(table_id);
         auto &rw_table = rws.get_table(table_id);
         auto rw_it = rw_table.find(key);
+        std::cout << "[mvto update] after find" << std::endl;
 
         if (rw_it == rw_table.end())
         {
@@ -272,7 +319,7 @@ class MVTO
                 val->unlock();
                 return nullptr;
             }
-            if (val->is_emplty())
+            if (val->is_empty())
             {
                 delete_from_tree(table_id, key, val);
                 val->unlock();
@@ -308,8 +355,8 @@ class MVTO
         {
             Rec *rec = malloc(record_size);
             memcpy(rec, rw_it->second.read_rec, record_size);
-            rw_it.second.write_rec = rec;
-            rw_it.second.type_ = ReadWriteType::UPDATE;
+            rw_it->second.write_rec = rec;
+            rw_it->second.type_ = ReadWriteType::UPDATE;
 
             auto &w_table = ws.get_table(table_id);
             w_table.emplace_back(key, rw_it);
@@ -325,7 +372,7 @@ class MVTO
     {
         Index& idx = Index::get_index();
         // also need record size
-        Schema& sch = Schema::get_schema();
+        const Schema& sch = Schema::get_schema();
         size_t record_size = sch.get_record_size(table_id);
 
         tables_.insert(table_id);
@@ -353,7 +400,7 @@ class MVTO
                 auto new_iter = rw_table.emplace_hint(
                     rw_it, std::piecewise_construct,
                     std::forward_as_tuple(key),
-                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, val)
+                    std::forward_as_tuple(nullptr, rec, ReadWriteType::INSERT, true, new_val)
                 );
                 auto &w_table = ws.get_table(table_id);
                 w_table.emplace_back(key, new_iter);
@@ -367,7 +414,7 @@ class MVTO
                     val->unlock();
                     return nullptr;
                 }
-                if (val->is_emplty())
+                if (val->is_empty())
                 {
                     val->unlock();
                     return nullptr;
@@ -442,7 +489,7 @@ class MVTO
     {
         Index& idx = Index::get_index();
         // also need record size
-        Schema& sch = Schema::get_schema();
+        const Schema& sch = Schema::get_schema();
         size_t record_size = sch.get_record_size(table_id);
 
         tables_.insert(table_id);
@@ -462,7 +509,7 @@ class MVTO
                     val->unlock();
                     return nullptr;
                 }
-                if (val->is_emplty())
+                if (val->is_empty())
                 {
                     val->unlock();
                     return nullptr;
@@ -548,9 +595,7 @@ class MVTO
                 // insert
 
 
-
             }
-
 
         }
 

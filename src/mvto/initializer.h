@@ -1,6 +1,10 @@
+//
+// schema &
+
 #pragma once
 
 #include <cstdlib>
+#include <cassert>
 
 #include "mvto.h"
 #include "record_layout.h"
@@ -18,12 +22,17 @@ class Initializer
     public:
     static void load_all_tables(int w_cnt)
     {
-        std::cout << " ////////// " << std::endl;
-        std::cout << "load all tables " << w_cnt << std::endl;
         // write schema
-        Schema sche = Schema::get_schema();
+        std::cout << "[Initializer] write schema" << std::endl;
+        Schema &sche = Schema::get_mutable_schema();
         sche.set_record_size(get_id<WareHouse>(), sizeof(WareHouse));
         sche.set_record_size(get_id<District>(), sizeof(District));
+        sche.set_record_size(get_id<Customer>(), sizeof(Customer));
+        sche.set_record_size(get_id<Order>(), sizeof(Order));
+        sche.set_record_size(get_id<OrderLine>(), sizeof(OrderLine));
+        sche.set_record_size(get_id<NewOrder>(), sizeof(NewOrder));
+        size_t record_size = sche.get_record_size(24);
+        assert(record_size == sizeof(District));
 
         // // load data
         load_warehouse_table(w_cnt);
@@ -78,7 +87,7 @@ class Initializer
     // std::cout << "load warehouse table" << w_cnt <<  std::endl;
         for (int w_id = 1; w_id < w_cnt; w_id ++ )
         {
-        std::cout << "warehouse table: " << w_id << std::endl;
+        // std::cout << "warehouse table: " << w_id << std::endl;
         c_and_s_warehouse_rec(w_id);
         load_district_table(w_id);
         }

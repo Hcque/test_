@@ -85,11 +85,4 @@ inline TableID get_id()
 }
 
 
-struct TableInfo
-{
-    size_t rec_sz;
-    TableID id;
-};
-
-
 

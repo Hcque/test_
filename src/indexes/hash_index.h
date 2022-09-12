@@ -32,6 +32,17 @@ class HashIndexes
         return Result::OK;
     }
 
+    Result remove(TableID table_id, Key key)
+    {
+        auto &_idx = indexes_[table_id];
+        auto it = _idx.find(key);
+
+        assert(it != _idx.end());
+        _idx.erase(it);
+        return Result::OK;
+    }
+
+
     static HashIndexes<Value>& get_index() { 
         static HashIndexes<Value> indexes;
         return indexes;

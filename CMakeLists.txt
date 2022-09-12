@@ -74,8 +74,6 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
 endif()
 
 
-
-
 set(CC_LINK_LIBRARIES "")
 set(CC_INCLUDE_DIRECTORIES "")
 

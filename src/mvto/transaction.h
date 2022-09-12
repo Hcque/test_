@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cassert>
 
 #include "mvto.h"
 
@@ -15,13 +16,13 @@ class Transaction
     public:
     Transaction()
     {
-        protocol = std::move(begin_tx());
+        protocol = std::make_unique<Protocol>(txn_cnt_++, txn_cnt_);
     }
     // ~Transaction() { mutex_.unlock(); }
 
     std::unique_ptr<Protocol> begin_tx()
     {
-        return std::make_unique<Protocol>(nullptr);
+        // return std::make_unique<Protocol>(nullptr);
     }
     void abort() {
         protocol->abort();
@@ -47,27 +48,28 @@ class Transaction
         // assume write set does not hold current record
         rec_ptr = reinterpret_cast<const Record *> ( 
             protocol->read(get_id<Record>(), key.get_raw_key()) );
+        // assert(rec_ptr != nullptr);
         return rec_ptr == nullptr ? Result::ABORT : Result::SUCCESS;
     }
 
     template <typename Record>
     Result prepare_record_for_insert(Record* &rec_ptr, typename Record::Key key)
     {
-        rec_ptr = reinterpret_cast<const Record *> ( 
+        rec_ptr = reinterpret_cast<Record *> ( 
             protocol->insert(get_id<Record>(), key.get_raw_key()) );
         return rec_ptr == nullptr ? Result::ABORT : Result::SUCCESS;
     }
     template <typename Record>
     Result prepare_record_for_update(Record*& rec_ptr,typename Record::Key key)
     {
-        rec_ptr = reinterpret_cast<const Record *> ( 
+        rec_ptr = reinterpret_cast<Record *> ( 
             protocol->update(get_id<Record>(), key.get_raw_key()) );
         return rec_ptr == nullptr ? Result::ABORT : Result::SUCCESS;
     }
     template <typename Record>
     Result prepare_record_for_remove(Record*& rec_ptr,typename Record::Key key)
     {
-        rec_ptr = reinterpret_cast<const Record *> ( 
+        rec_ptr = reinterpret_cast<Record *> ( 
             protocol->remove(get_id<Record>(), key.get_raw_key()) );
         return rec_ptr == nullptr ? Result::ABORT : Result::SUCCESS;
     }
@@ -82,7 +84,17 @@ class Transaction
 
     private:
         std::unique_ptr<Protocol> protocol = nullptr;
+        uint64_t txn_cnt_{0};
 
 };
+
+
+////////// transaction utils
+class Output
+{
+
+
+};
+
 
 

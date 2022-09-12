@@ -12,10 +12,17 @@
 // #include "./../indexes/masstree.hpp"
 #include "./../indexes/hash_index.h"
 
+
+
+template <typename Protocol, typename TxProfile>
 void runtxn()
 {
-    std::cout << "me " << std::endl;
-
+    std::cout << "[runtxn]" << std::endl;
+    TxProfile process(1);
+    std::cout << "[runtxn] start tx" << std::endl;
+    Transaction<Protocol> tx;
+    std::cout << "[runtxn] run" << std::endl;
+    process.run(tx);
 }
 
 int main(int argc, char *argv[])
@@ -24,27 +31,19 @@ int main(int argc, char *argv[])
     int w_cnt = atoi(argv[1]);
     int thre_cnt = atoi(argv[2]);
     // init db
-    std::cout << "load tables\n";
+    std::cout << "[main] load tables\n";
 
     using Index = HashIndexes<Value<Version>>;
     using Protocol = MVTO<Index>;
     Initializer<Index>::load_all_tables(w_cnt);
-    // Index::get_index();
 
-    // std::cout << "check table\n";
-    // typename RecordToTable<WareHouse>::type& t = Database::get_db().get_table<WareHouse>();
-    // for (auto it = t.begin(); it != t.end(); ++ it)
-    // {
-    //     // std::cout << &it << std::endl;
-    //     std::cout << it->second.get() << " " << std::endl;
-    // }
 
-    std::cout << "start txns\n";
     // run txn
     std::vector<std::thread> threads;
     for (int i = 0; i < thre_cnt; i ++ )
     {
-        threads.emplace_back(runtxn);
+        // std::cout << "[main] thd cnt:" << i << std::endl;
+        threads.emplace_back(runtxn<Protocol, NewOrderTxn>);
     }
 
     for (int i = 0; i < thre_cnt; i ++ )
