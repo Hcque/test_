@@ -1,7 +1,7 @@
 #include "common.h"
 #include "test.cpp"
 
-int main()
+int main(int argc, char *argv[])
 {
     std::vector< std::pair<uint64_t, typename std::unordered_map<uint64_t,uint64_t>::iterator > >  A;
     std::unordered_map<uint64_t, uint64_t> M;
@@ -64,13 +64,8 @@ int main()
     get_correct_version(&value);
     */
 
-    test1();
-    test2();
-
-
-
-
-
-
+    // test1();
+    uint64_t num_thread = atoi(argv[1]);
+    test2(num_thread);
 
 }

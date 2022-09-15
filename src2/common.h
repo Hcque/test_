@@ -10,10 +10,13 @@
 #include <iostream>
 #include <cstring>
 #include <cstdint>
+#include <memory>
 
 #include "timestamp_manager.h"
 
 using timestamp_t = uint64_t;
+using Key = uint64_t;
+using Val = uint64_t;
 
 
 struct Version{
@@ -51,11 +54,21 @@ struct Value
 
     void lock() { latch_.lock();}
     void unlock() { latch_.unlock(); }
-
 };
 
-TimestampManager tsm;
-#define start_ts (tsm.CurrentTime())
+
+class MVTO
+{
+public:
+// TimestampManager* tsm;
+// #define start_ts tsm->CurrentTime()
+uint64_t txnid;
+timestamp_t start_ts;
+
+std::unordered_map<Key, NewestVersion<Value<Version>>> newest_version_list;
+
+// MVTO(TimestampManager *tsm): tsm(tsm) {}
+MVTO(uint64_t txnid): txnid(txnid), start_ts(txnid) {}
 
 Version* get_correct_version(Value<Version>* val)
 {
@@ -70,17 +83,10 @@ Version* get_correct_version(Value<Version>* val)
 }
 
 
-using Key = uint64_t;
-
-std::unordered_map<Key, NewestVersion<Value<Version>>> newest_version_list;
-
-using Val = uint64_t;
-
-
 void Insert(Key key, Val val_to_inserted)
 {
-    std::cout << "[Insert] " << key << std::endl;
-    tsm.IncrementTime();
+    // std::cout << "[Insert] " << key << std::endl;
+    // tsm->IncrementTime();
 
     auto it = newest_version_list.find(key);
     if (it == newest_version_list.end())
@@ -109,8 +115,8 @@ void Insert(Key key, Val val_to_inserted)
 
 int Read(Key key, Val& val)
 {
-    tsm.IncrementTime();
-    std::cout << "[Read] " << key  << " ";
+    // tsm->IncrementTime();
+    // std::cout << "[Read] " << key  << " ";
     auto it = newest_version_list.find(key);
     int cnt = 0;
     if (it == newest_version_list.end())
@@ -123,15 +129,17 @@ int Read(Key key, Val& val)
         while (version != nullptr)
         {
             cnt ++ ;
-            std::cout << "[Read] version ts:" << version->wtts << std::endl;
+            // std::cout << "[Read] version ts:" << version->wtts << std::endl;
             version = version->prev;
         }
-        std::cout << "[Read] cnt: " << cnt << std::endl;
+        // std::cout << "[Read] cnt: " << cnt << std::endl;
     }
 
     return cnt;
 }
 
+
+};
 
 
 

@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+template <typename Protocol>
 class TimestampManager
 {
 using timestamp_t = uint64_t;
@@ -12,13 +13,21 @@ using timestamp_t = uint64_t;
   // TimestampManager& operator=(const &TimestampManager other) = delete;
 
 
-  timestamp_t CurrentTime() const { return ts.load(); }
+  std::unique_ptr<Protocol> BeginTransaction()
+  {
+    IncrementTime();
+    return std::make_unique<Protocol> (CurrentTime());
+  }
+
+  
+
+  timestamp_t CurrentTime() const { return ts.load(); } //.load(); }
   void IncrementTime() 
   {
       ts ++ ;
   }
 
-
+  // timestamp_t ts;
   std::atomic<timestamp_t> ts{1};
 
 };
