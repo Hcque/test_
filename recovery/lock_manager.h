@@ -34,7 +34,6 @@ struct LockRequest
     txn_id_t txnid;
     rid_t rid; 
     LockType type_ = LockType::SHARED;
-
 };
 
 // struct LockRequestQueue
@@ -55,7 +54,6 @@ struct LockRequestQueue
 
 class LockManager
 {
-
   public:
     std::unordered_map<txn_id_t, Transaction> active_txns_;
 
@@ -154,12 +152,10 @@ class LockManager
                 }
 
                  active_txns_[txnid].shared_lock_set_.erase(rid);
-            active_txns_[txnid].exclusive_lock_set_.emplace(rid);
+                active_txns_[txnid].exclusive_lock_set_.emplace(rid);
                 lock_table_[rid].writer_entered_ = 1;
 
         }
-        
-
 
     }
     void Unlock(txn_id_t txnid, rid_t rid)

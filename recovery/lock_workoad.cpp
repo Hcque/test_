@@ -19,7 +19,7 @@ int main()
     for (int i = 10; i < 20; i ++ )
     {
         txnid = i;
-        lkm.LockExclusive(txnid, rid);
+        lkm.LockShared(txnid, rid);
     }
     for (int i = 1; i < 10; i ++ )
     {
