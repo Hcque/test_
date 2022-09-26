@@ -42,7 +42,7 @@ public:
         while (executor->Next(&tuple, &rid))
         {
             if (result_set != nullptr)
-            {
+            
 
             }
 
